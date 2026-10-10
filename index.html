@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>标题原创校验工具</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1f2329; --muted: #646a73;
+    --primary: #3370ff; --primary-hover: #295fe0;
+    --ok: #34c724; --ok-bg: #e8f7e5; --dup: #f54a45; --dup-bg: #fdecea;
+    --warn-bg: #fff3e0; --warn: #ff8800;
+    --border: #dee0e3; --radius: 8px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1a1c20; --card: #26292f; --text: #e8eaed; --muted: #9aa0a6;
+      --ok-bg: #1e3320; --dup-bg: #3a2224; --warn-bg: #3a2f1c;
+      --border: #3d4148;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh; padding: 24px 16px;
+  }
+  .container { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px; margin-bottom: 20px;
+  }
+  .input-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  input[type="text"] {
+    flex: 1; min-width: 240px; padding: 10px 14px; font-size: 15px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+    background: var(--bg); color: var(--text); outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--primary); }
+  button {
+    padding: 10px 24px; font-size: 15px; border: none; border-radius: var(--radius);
+    background: var(--primary); color: #fff; cursor: pointer; white-space: nowrap;
+  }
+  button:hover { background: var(--primary-hover); }
+  button.ghost {
+    background: transparent; color: var(--muted);
+    border: 1px solid var(--border); font-size: 13px; padding: 6px 14px;
+  }
+  button.ghost:hover { color: var(--text); }
+  .hint { color: var(--muted); font-size: 12px; margin-top: 8px; line-height: 1.6; }
+  .result {
+    margin-top: 16px; padding: 14px 16px; border-radius: var(--radius);
+    font-size: 15px; display: none; line-height: 1.7;
+  }
+  .result.show { display: block; }
+  .result.ok { background: var(--ok-bg); border-left: 4px solid var(--ok); }
+  .result.dup { background: var(--dup-bg); border-left: 4px solid var(--dup); }
+  .result.err { background: var(--warn-bg); border-left: 4px solid var(--warn); }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 12px;
+    font-size: 13px; font-weight: 600; margin-right: 8px;
+  }
+  .badge.ok { background: var(--ok); color: #fff; }
+  .badge.dup { background: var(--dup); color: #fff; }
+  .badge.err { background: var(--warn); color: #fff; }
+  .stats { display: flex; gap: 14px; flex-wrap: wrap; }
+  .stat {
+    flex: 1; min-width: 130px; text-align: center; padding: 14px 8px;
+    border: 1px solid var(--border); border-radius: var(--radius);
+  }
+  .stat .num { font-size: 26px; font-weight: 700; }
+  .stat .label { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stat.ok .num { color: var(--ok); }
+  .stat.dup .num { color: var(--dup); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 9px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  td.tag-ok { color: var(--ok); font-weight: 600; }
+  td.tag-dup { color: var(--dup); font-weight: 600; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 14px; flex-wrap: wrap; }
+  .tab {
+    padding: 6px 14px; border-radius: 16px; cursor: pointer; font-size: 13px;
+    border: 1px solid var(--border); color: var(--muted); background: transparent;
+  }
+  .tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .empty { color: var(--muted); text-align: center; padding: 24px 0; font-size: 13px; }
+  .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-header h2 { font-size: 16px; }
+  .card-header .meta { color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>📋 标题原创校验工具</h1>
+  <div class="subtitle">固定格式：【频道栏目名称】标题 · 以北京时间 0 点清零统计 · 按日期归档</div>
+
+  <!-- 输入校验 -->
+  <div class="card">
+    <div class="input-row">
+      <input type="text" id="inputBox" placeholder="请输入：【新闻联播】这是标题示例"
+             autocomplete="off" spellcheck="false">
+      <button onclick="check()">校验</button>
+    </div>
+    <div class="hint">
+      栏目名须为以下之一：朝闻天下、新闻直播间、午夜新闻、新闻30分、中国新闻、今日环球、共同关注、正点财经、天下财经、体坛快讯、国防军事早报、经济信息联播、军事报道、新闻联播、晚间新闻、24小时。
+      若标题与历史记录完全相同则判定为重复。按回车可快速校验。
+    </div>
+    <div class="result" id="resultBox"></div>
+  </div>
+
+  <!-- 今日统计 -->
+  <div class="card">
+    <div class="card-header">
+      <h2>📊 今日统计</h2>
+      <span class="meta" id="todayLabel"></span>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="num" id="statTotal">0</div><div class="label">总提交</div></div>
+      <div class="stat ok"><div class="num" id="statOk">0</div><div class="label">✅ 原创</div></div>
+      <div class="stat dup"><div class="num" id="statDup">0</div><div class="label">🔁 重复</div></div>
+    </div>
+  </div>
+
+  <!-- 历史归档 -->
+  <div class="card">
+    <div class="card-header">
+      <h2>🗂 历史记录</h2>
+      <button class="ghost" onclick="clearAll()">清空全部数据</button>
+    </div>
+    <div class="tabs" id="dateTabs"></div>
+    <div id="recordList"></div>
+  </div>
+</div>
+
+<script>
+// ============ 配置 ============
+const CHANNELS = ["朝闻天下","新闻直播间","午夜新闻","新闻30分","中国新闻","今日环球",
+  "共同关注","正点财经","天下财经","体坛快讯","国防军事早报","经济信息联播",
+  "军事报道","新闻联播","晚间新闻","24小时"];
+const STORE_KEY = "title_checker_records_v1";
+
+// ============ 工具函数 ============
+// 北京时间（UTC+8）当前日期字符串，如 2026-10-10
+function beijingDate(offsetDays = 0) {
+  const now = new Date(Date.now() + 8 * 3600 * 1000 + offsetDays * 86400 * 1000);
+  return now.toISOString().slice(0, 10);
+}
+function beijingNow() {
+  return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 19).replace("T", " ");
+}
+function loadAll() {
+  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+function saveAll(data) {
+  localStorage.setItem(STORE_KEY, JSON.stringify(data));
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// 解析输入：返回 {channel, title} 或 {error}
+function parseInput(raw) {
+  const text = raw.trim();
+  const m = text.match(/^【([^】]+)】(.+)$/);
+  if (!m) return { error: "格式错误：须为 【频道栏目名称】标题" };
+  const channel = m[1].trim();
+  const title = m[2].trim();
+  if (!CHANNELS.includes(channel))
+    return { error: `栏目「${channel}」不在允许列表中` };
+  if (!title) return { error: "标题不能为空" };
+  return { channel, title };
+}
+
+// ============ 核心校验 ============
+function check() {
+  const box = document.getElementById("inputBox");
+  const resBox = document.getElementById("resultBox");
+  const parsed = parseInput(box.value);
+  resBox.className = "result show";
+
+  if (parsed.error) {
+    resBox.classList.add("err");
+    resBox.innerHTML = `<span class="badge err">⚠ 输入无效</span>${escapeHtml(parsed.error)}`;
+    return;
+  }
+
+  const all = loadAll();
+  const today = beijingDate();
+  if (!all[today]) all[today] = [];
+
+  // 与全部历史记录的标题做完全相同比对
+  let dupRecord = null;
+  for (const date of Object.keys(all).sort()) {
+    for (const r of all[date]) {
+      if (r.title === parsed.title) { dupRecord = r; break; }
+    }
+    if (dupRecord) break;
+  }
+
+  const isDup = !!dupRecord;
+  all[today].push({
+    time: beijingNow(),
+    input: box.value.trim(),
+    channel: parsed.channel,
+    title: parsed.title,
+    result: isDup ? "重复" : "原创"
+  });
+  saveAll(all);
+
+  if (isDup) {
+    resBox.classList.add("dup");
+    resBox.innerHTML = `<span class="badge dup">🔁 重复</span>标题「<b>${escapeHtml(parsed.title)}」与 ${dupRecord.time} 的记录完全相同。`;
+  } else {
+    resBox.classList.add("ok");
+    resBox.innerHTML = `<span class="badge ok">✅ 原创</span>「【${escapeHtml(parsed.channel)}】${escapeHtml(parsed.title)}」校验通过，已记录。`;
+  }
+  box.value = "";
+  box.focus();
+  render();
+}
+
+// ============ 渲染 ============
+let activeDate = beijingDate();
+
+function render() {
+  const all = loadAll();
+  const today = beijingDate();
+
+  // 今日统计（当天 0 点后自动从空开始）
+  const todayList = all[today] || [];
+  document.getElementById("statTotal").textContent = todayList.length;
+  document.getElementById("statOk").textContent = todayList.filter(r => r.result === "原创").length;
+  document.getElementById("statDup").textContent = todayList.filter(r => r.result === "重复").length;
+  document.getElementById("todayLabel").textContent = `北京时间 ${today}（0 点自动清零）`;
+
+  // 日期标签页
+  const dates = Object.keys(all).filter(d => all[d].length).sort().reverse();
+  const tabs = document.getElementById("dateTabs");
+  if (!dates.includes(activeDate) && dates.length) activeDate = dates[0];
+  tabs.innerHTML = dates.length
+    ? dates.map(d => `<button class="tab ${d === activeDate ? "active" : ""}" onclick="activeDate='${d}';render()">${d}${d === today ? "（今天）" : ""}</button>`).join("")
+    : `<span class="empty" style="padding:0">暂无历史记录</span>`;
+
+  // 记录表
+  const list = document.getElementById("recordList");
+  const records = all[activeDate] || [];
+  list.innerHTML = records.length ? `
+    <table>
+      <thead><tr><th style="width:150px">时间</th><th>输入内容</th><th style="width:80px">校验结果</th></tr></thead>
+      <tbody>${records.map(r => `
+        <tr>
+          <td>${r.time.split(" ")[1]}</td>
+          <td>${escapeHtml(r.input)}</td>
+          <td class="${r.result === "原创" ? "tag-ok" : "tag-dup"}">${r.result === "原创" ? "✅ 原创" : "🔁 重复"}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>` : `<div class="empty">该日期暂无记录</div>`;
+}
+
+function clearAll() {
+  if (confirm("确定清空全部历史记录与统计？此操作不可恢复。")) {
+    localStorage.removeItem(STORE_KEY);
+    render();
+  }
+}
+
+document.getElementById("inputBox").addEventListener("keydown", e => {
+  if (e.key === "Enter") check();
+});
+render();
+</script>
+</body>
+</html>

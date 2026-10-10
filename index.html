@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>标题原创校验工具</title>
+<title>标题原创校验工具（联网版）</title>
 <style>
   :root {
     --bg: #f5f6f8; --card: #ffffff; --text: #1f2329; --muted: #646a73;
@@ -43,6 +43,7 @@
     background: var(--primary); color: #fff; cursor: pointer; white-space: nowrap;
   }
   button:hover { background: var(--primary-hover); }
+  button:disabled { opacity: .5; cursor: not-allowed; }
   button.ghost {
     background: transparent; color: var(--muted);
     border: 1px solid var(--border); font-size: 13px; padding: 6px 14px;
@@ -88,23 +89,31 @@
   .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
   .card-header h2 { font-size: 16px; }
   .card-header .meta { color: var(--muted); font-size: 12px; }
+  .live { display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted); }
+  .live::before { content:"";width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite; }
+  @keyframes pulse { 0%{opacity:1} 50%{opacity:.3} 100%{opacity:1} }
+  .cfg-error { background: var(--dup-bg); border-left: 4px solid var(--dup); padding: 14px 16px;
+    border-radius: var(--radius); font-size: 14px; line-height: 1.8; display: none; }
 </style>
+<base target="_blank">
 </head>
 <body>
 <div class="container">
-  <h1>📋 标题原创校验工具</h1>
-  <div class="subtitle">固定格式：【频道栏目名称】标题 · 以北京时间 0 点清零统计 · 按日期归档</div>
+  <h1>📋 标题原创校验工具（联网共享版）</h1>
+  <div class="subtitle">固定格式：【频道栏目名称】标题 · 以北京时间 0 点清零统计 · 所有使用者数据互通 · 每 10 秒自动同步</div>
+
+  <div class="cfg-error" id="cfgError"></div>
 
   <!-- 输入校验 -->
   <div class="card">
     <div class="input-row">
       <input type="text" id="inputBox" placeholder="请输入：【新闻联播】这是标题示例"
              autocomplete="off" spellcheck="false">
-      <button onclick="check()">校验</button>
+      <button onclick="check()" id="checkBtn">校验</button>
     </div>
     <div class="hint">
       栏目名须为以下之一：朝闻天下、新闻直播间、午夜新闻、新闻30分、中国新闻、今日环球、共同关注、正点财经、天下财经、体坛快讯、国防军事早报、经济信息联播、军事报道、新闻联播、晚间新闻、24小时。
-      若标题与历史记录完全相同则判定为重复。按回车可快速校验。
+      若标题与任何使用者的历史输入完全相同则判定为重复。按回车可快速校验。
     </div>
     <div class="result" id="resultBox"></div>
   </div>
@@ -126,7 +135,7 @@
   <div class="card">
     <div class="card-header">
       <h2>🗂 历史记录</h2>
-      <button class="ghost" onclick="clearAll()">清空全部数据</button>
+      <span class="live">实时同步中</span>
     </div>
     <div class="tabs" id="dateTabs"></div>
     <div id="recordList"></div>
@@ -134,14 +143,16 @@
 </div>
 
 <script>
-// ============ 配置 ============
+// ================== 配置区（必须修改） ==================
+const SUPABASE_URL = "https://ensllppqsrrqtnbxdifk.supabase.co";   // ← 填入 Project Settings → API 里的 Project URL
+const SUPABASE_ANON_KEY = "sb_publishable_9nWJupbhHAgQqg1rFfiBVw_gnh_aTRB";            // ← 填入 anon public 那一行的密钥
+// =======================================================
+
 const CHANNELS = ["朝闻天下","新闻直播间","午夜新闻","新闻30分","中国新闻","今日环球",
   "共同关注","正点财经","天下财经","体坛快讯","国防军事早报","经济信息联播",
   "军事报道","新闻联播","晚间新闻","24小时"];
-const STORE_KEY = "title_checker_records_v1";
+const PAGE_SIZE = 500;
 
-// ============ 工具函数 ============
-// 北京时间（UTC+8）当前日期字符串，如 2026-10-10
 function beijingDate(offsetDays = 0) {
   const now = new Date(Date.now() + 8 * 3600 * 1000 + offsetDays * 86400 * 1000);
   return now.toISOString().slice(0, 10);
@@ -149,109 +160,129 @@ function beijingDate(offsetDays = 0) {
 function beijingNow() {
   return new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 19).replace("T", " ");
 }
-function loadAll() {
-  try { return JSON.parse(localStorage.getItem(STORE_KEY)) || {}; }
-  catch (e) { return {}; }
-}
-function saveAll(data) {
-  localStorage.setItem(STORE_KEY, JSON.stringify(data));
-}
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
-
-// 解析输入：返回 {channel, title} 或 {error}
 function parseInput(raw) {
   const text = raw.trim();
   const m = text.match(/^【([^】]+)】(.+)$/);
   if (!m) return { error: "格式错误：须为 【频道栏目名称】标题" };
   const channel = m[1].trim();
   const title = m[2].trim();
-  if (!CHANNELS.includes(channel))
-    return { error: `栏目「${channel}」不在允许列表中` };
+  if (!CHANNELS.includes(channel)) return { error: `栏目「${channel}」不在允许列表中` };
   if (!title) return { error: "标题不能为空" };
   return { channel, title };
 }
 
-// ============ 核心校验 ============
-function check() {
+// ---------- Supabase REST 请求 ----------
+async function sb(path, opts = {}) {
+  const res = await fetch(SUPABASE_URL + "/rest/v1/" + path, Object.assign({
+    headers: {
+      "apikey": SUPABASE_ANON_KEY,
+      "Authorization": "Bearer " + SUPABASE_ANON_KEY,
+      "Content-Type": "application/json",
+      "Prefer": opts.method === "POST" ? "return=representation" : "count=exact"
+    }
+  }, opts));
+  if (!res.ok) throw new Error("请求失败: " + res.status);
+  if (res.status === 204) return [];
+  return await res.json();
+}
+
+// 查询标题是否已存在（数据库层面全等比对）
+async function findDuplicateTitle(title) {
+  const rows = await sb("records?select=day,input,created_at&title=eq." + encodeURIComponent(title) + "&limit=1");
+  return rows.length ? rows[0] : null;
+}
+
+// 拉取最近 7 天的记录（页面展示与统计用）
+async function fetchRecentDays() {
+  const days = [];
+  for (let i = 0; i < 7; i++) days.push(beijingDate(-i));
+  const inList = days.map(d => '"' + d + '"').join(",");
+  return await sb("records?select=created_at,input,channel,title,result,day&day=in.(" + inList + ")&order=created_at.desc&limit=" + PAGE_SIZE);
+}
+
+// ---------- 核心校验 ----------
+async function check() {
   const box = document.getElementById("inputBox");
+  const btn = document.getElementById("checkBtn");
   const resBox = document.getElementById("resultBox");
   const parsed = parseInput(box.value);
   resBox.className = "result show";
-
   if (parsed.error) {
     resBox.classList.add("err");
     resBox.innerHTML = `<span class="badge err">⚠ 输入无效</span>${escapeHtml(parsed.error)}`;
     return;
   }
-
-  const all = loadAll();
-  const today = beijingDate();
-  if (!all[today]) all[today] = [];
-
-  // 与全部历史记录的标题做完全相同比对
-  let dupRecord = null;
-  for (const date of Object.keys(all).sort()) {
-    for (const r of all[date]) {
-      if (r.title === parsed.title) { dupRecord = r; break; }
+  btn.disabled = true;
+  try {
+    const dup = await findDuplicateTitle(parsed.title);
+    const isDup = !!dup;
+    // 写入数据库，所有人可见
+    await sb("records", {
+      method: "POST",
+      body: JSON.stringify({
+        day: beijingDate(),
+        input: box.value.trim(),
+        channel: parsed.channel,
+        title: parsed.title,
+        result: isDup ? "重复" : "原创"
+      })
+    });
+    if (isDup) {
+      resBox.classList.add("dup");
+      resBox.innerHTML = `<span class="badge dup">🔁 重复</span>标题「<b>${escapeHtml(parsed.title)}」已被${dup.day === beijingDate() ? "今天" : "此前"}输入过（${dup.created_at.replace("T"," ").slice(0,16)}）。`;
+    } else {
+      resBox.classList.add("ok");
+      resBox.innerHTML = `<span class="badge ok">✅ 原创</span>「【${escapeHtml(parsed.channel)}】${escapeHtml(parsed.title)}」校验通过，已记录并向所有人同步。`;
     }
-    if (dupRecord) break;
+    box.value = "";
+    await refresh();
+  } catch (e) {
+    resBox.classList.add("err");
+    resBox.innerHTML = `<span class="badge err">⚠ 网络错误</span>无法连接数据库，请检查网络后重试。`;
+  } finally {
+    btn.disabled = false;
+    box.focus();
   }
-
-  const isDup = !!dupRecord;
-  all[today].push({
-    time: beijingNow(),
-    input: box.value.trim(),
-    channel: parsed.channel,
-    title: parsed.title,
-    result: isDup ? "重复" : "原创"
-  });
-  saveAll(all);
-
-  if (isDup) {
-    resBox.classList.add("dup");
-    resBox.innerHTML = `<span class="badge dup">🔁 重复</span>标题「<b>${escapeHtml(parsed.title)}」与 ${dupRecord.time} 的记录完全相同。`;
-  } else {
-    resBox.classList.add("ok");
-    resBox.innerHTML = `<span class="badge ok">✅ 原创</span>「【${escapeHtml(parsed.channel)}】${escapeHtml(parsed.title)}」校验通过，已记录。`;
-  }
-  box.value = "";
-  box.focus();
-  render();
 }
 
-// ============ 渲染 ============
+// ---------- 渲染 ----------
 let activeDate = beijingDate();
+let cache = [];
+
+async function refresh() {
+  try {
+    cache = await fetchRecentDays();
+    render();
+  } catch (e) {
+    document.getElementById("recordList").innerHTML =
+      `<div class="empty">⚠ 无法连接数据库，请检查配置或网络</div>`;
+  }
+}
 
 function render() {
-  const all = loadAll();
   const today = beijingDate();
-
-  // 今日统计（当天 0 点后自动从空开始）
-  const todayList = all[today] || [];
+  const todayList = cache.filter(r => r.day === today);
   document.getElementById("statTotal").textContent = todayList.length;
   document.getElementById("statOk").textContent = todayList.filter(r => r.result === "原创").length;
   document.getElementById("statDup").textContent = todayList.filter(r => r.result === "重复").length;
   document.getElementById("todayLabel").textContent = `北京时间 ${today}（0 点自动清零）`;
 
-  // 日期标签页
-  const dates = Object.keys(all).filter(d => all[d].length).sort().reverse();
-  const tabs = document.getElementById("dateTabs");
+  const dates = [...new Set(cache.map(r => r.day))].sort().reverse();
   if (!dates.includes(activeDate) && dates.length) activeDate = dates[0];
-  tabs.innerHTML = dates.length
+  document.getElementById("dateTabs").innerHTML = dates.length
     ? dates.map(d => `<button class="tab ${d === activeDate ? "active" : ""}" onclick="activeDate='${d}';render()">${d}${d === today ? "（今天）" : ""}</button>`).join("")
     : `<span class="empty" style="padding:0">暂无历史记录</span>`;
 
-  // 记录表
-  const list = document.getElementById("recordList");
-  const records = all[activeDate] || [];
-  list.innerHTML = records.length ? `
+  const records = cache.filter(r => r.day === activeDate);
+  document.getElementById("recordList").innerHTML = records.length ? `
     <table>
       <thead><tr><th style="width:150px">时间</th><th>输入内容</th><th style="width:80px">校验结果</th></tr></thead>
       <tbody>${records.map(r => `
         <tr>
-          <td>${r.time.split(" ")[1]}</td>
+          <td>${r.created_at.replace("T"," ").slice(11,16)}</td>
           <td>${escapeHtml(r.input)}</td>
           <td class="${r.result === "原创" ? "tag-ok" : "tag-dup"}">${r.result === "原创" ? "✅ 原创" : "🔁 重复"}</td>
         </tr>`).join("")}
@@ -259,17 +290,22 @@ function render() {
     </table>` : `<div class="empty">该日期暂无记录</div>`;
 }
 
-function clearAll() {
-  if (confirm("确定清空全部历史记录与统计？此操作不可恢复。")) {
-    localStorage.removeItem(STORE_KEY);
-    render();
+// ---------- 启动 ----------
+(function init() {
+  const errBox = document.getElementById("cfgError");
+  if (SUPABASE_URL.includes("你的项目ID") || SUPABASE_ANON_KEY.includes("填入")) {
+    errBox.style.display = "block";
+    errBox.innerHTML = "<b>⚠ 尚未配置数据库</b><br>请打开本文件的源代码，把顶部配置区的 SUPABASE_URL 和 SUPABASE_ANON_KEY 替换成你自己的 Supabase 项目信息（见部署文档）。";
+    document.getElementById("checkBtn").disabled = true;
+    return;
   }
-}
+  refresh();
+  setInterval(refresh, 10000); // 每 10 秒自动同步，看到他人的新输入
+})();
 
 document.getElementById("inputBox").addEventListener("keydown", e => {
   if (e.key === "Enter") check();
 });
-render();
 </script>
 </body>
 </html>

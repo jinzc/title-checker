@@ -144,8 +144,8 @@
 
 <script>
 // ================== 配置区（必须修改） ==================
-const SUPABASE_URL = "https://ensllppqsrrqtnbxdifk.supabase.co";   // ← 填入 Project Settings → API 里的 Project URL
-const SUPABASE_ANON_KEY = "sb_publishable_9nWJupbhHAgQqg1rFfiBVw_gnh_aTRB";            // ← 填入 anon public 那一行的密钥
+const SUPABASE_URL = "https://你的项目ID.supabase.co";   // ← 填入 Project Settings → API 里的 Project URL
+const SUPABASE_ANON_KEY = "填入anon public密钥";            // ← 填入 anon public 那一行的密钥
 // =======================================================
 
 const CHANNELS = ["朝闻天下","新闻直播间","午夜新闻","新闻30分","中国新闻","今日环球",
@@ -184,7 +184,11 @@ async function sb(path, opts = {}) {
       "Prefer": opts.method === "POST" ? "return=representation" : "count=exact"
     }
   }, opts));
-  if (!res.ok) throw new Error("请求失败: " + res.status);
+  if (!res.ok) {
+    let detail = "";
+    try { detail = (await res.json()).message || (await res.text()).slice(0, 200); } catch (e) {}
+    throw new Error("HTTP " + res.status + (detail ? "：" + detail : ""));
+  }
   if (res.status === 204) return [];
   return await res.json();
 }
@@ -241,7 +245,7 @@ async function check() {
     await refresh();
   } catch (e) {
     resBox.classList.add("err");
-    resBox.innerHTML = `<span class="badge err">⚠ 网络错误</span>无法连接数据库，请检查网络后重试。`;
+    resBox.innerHTML = `<span class="badge err">⚠ 请求失败</span>${escapeHtml(String(e.message || e))}`;
   } finally {
     btn.disabled = false;
     box.focus();
@@ -258,7 +262,7 @@ async function refresh() {
     render();
   } catch (e) {
     document.getElementById("recordList").innerHTML =
-      `<div class="empty">⚠ 无法连接数据库，请检查配置或网络</div>`;
+      `<div class="empty" style="color:var(--dup);">⚠ ${escapeHtml(String(e.message || e))}</div>`;
   }
 }
 
